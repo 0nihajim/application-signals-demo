@@ -6,6 +6,7 @@ import { Secret as SmSecret } from 'aws-cdk-lib/aws-secretsmanager';
 import {
     Cluster,
     Compatibility,
+    ContainerDependencyCondition,
     ContainerImage,
     FargateService,
     HealthCheck,
@@ -501,6 +502,21 @@ export class EcsClusterStack extends Stack {
             ],
         });
 
+        // Add init container first
+        const initContainer = taskDefinition.addContainer(`${serviceName}-init-container`, {
+            image: ContainerImage.fromRegistry(
+                `public.ecr.aws/aws-observability/adot-autoinstrumentation-java:${this.adotJavaImageTag}`,
+            ),
+            essential: false, // The container will stop with exit 0 after it completes.
+            command: ['cp', '/javaagent.jar', '/otel-auto-instrumentation/javaagent.jar'],
+        });
+
+        initContainer.addMountPoints({
+            sourceVolume: 'opentelemetry-auto-instrumentation',
+            containerPath: '/otel-auto-instrumentation',
+            readOnly: false,
+        });
+
         // Add Container to Task Definition
         const mainContainer = taskDefinition.addContainer(`${serviceName}-container`, {
             image: ContainerImage.fromRegistry(`${this.ecrImagePrefix}/springcommunity/${image}`),
@@ -532,26 +548,16 @@ export class EcsClusterStack extends Stack {
             containerPort: port,
             protocol: Protocol.TCP,
         });
-
+        
         mainContainer.addMountPoints({
             sourceVolume: 'opentelemetry-auto-instrumentation',
             containerPath: '/otel-auto-instrumentation',
             readOnly: false,
         });
-
-        // Add init container
-        const initContainer = taskDefinition.addContainer(`${serviceName}-init-container`, {
-            image: ContainerImage.fromRegistry(
-                `public.ecr.aws/aws-observability/adot-autoinstrumentation-java:${this.adotJavaImageTag}`,
-            ),
-            essential: false, // The container will stop with exit 0 after it completes.
-            command: ['cp', '/javaagent.jar', '/otel-auto-instrumentation/javaagent.jar'],
-        });
-
-        initContainer.addMountPoints({
-            sourceVolume: 'opentelemetry-auto-instrumentation',
-            containerPath: '/otel-auto-instrumentation',
-            readOnly: false,
+        // Add dependency to ensure init container completes before main container starts
+        mainContainer.addContainerDependencies({
+            container: initContainer,
+            condition: ContainerDependencyCondition.SUCCESS,
         });
 
         // Add CloudWatch agent container
@@ -607,6 +613,21 @@ export class EcsClusterStack extends Stack {
             ],
         });
 
+        // Add init container first
+        const initContainer = taskDefinition.addContainer(`${serviceName}-init-container`, {
+            image: ContainerImage.fromRegistry(
+                `public.ecr.aws/aws-observability/adot-autoinstrumentation-python:${this.adotPythonImageTag}`,
+            ),
+            essential: false, // The container will stop with exit 0 after it completes.
+            command: ['cp', '-a', '/autoinstrumentation/.', '/otel-auto-instrumentation-python'],
+        });
+
+        initContainer.addMountPoints({
+            sourceVolume: 'opentelemetry-auto-instrumentation-python',
+            containerPath: '/otel-auto-instrumentation-python',
+            readOnly: false,
+        });
+
         // Add Container to Task Definition
         const mainContainer = taskDefinition.addContainer(`${serviceName}-container`, {
             image: ContainerImage.fromRegistry(`${this.ecrImagePrefix}/${image}`),
@@ -657,20 +678,11 @@ export class EcsClusterStack extends Stack {
             containerPath: '/otel-auto-instrumentation-python',
             readOnly: false,
         });
-
-        // Add init container
-        const initContainer = taskDefinition.addContainer(`${serviceName}-init-container`, {
-            image: ContainerImage.fromRegistry(
-                `public.ecr.aws/aws-observability/adot-autoinstrumentation-python:${this.adotPythonImageTag}`,
-            ),
-            essential: false, // The container will stop with exit 0 after it completes.
-            command: ['cp', '-a', '/autoinstrumentation/.', '/otel-auto-instrumentation-python'],
-        });
-
-        initContainer.addMountPoints({
-            sourceVolume: 'opentelemetry-auto-instrumentation-python',
-            containerPath: '/otel-auto-instrumentation-python',
-            readOnly: false,
+        
+        // Add dependency to ensure init container completes before main container starts
+        mainContainer.addContainerDependencies({
+            container: initContainer,
+            condition: ContainerDependencyCondition.SUCCESS,
         });
 
         // Add CloudWatch agent container
