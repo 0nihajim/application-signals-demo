@@ -41,7 +41,7 @@ export class LoadBalancerStack extends Stack {
             protocol: ApplicationProtocol.HTTP,
             targetType: TargetType.IP,
             healthCheck: {
-                path: '/',
+                path: '/actuator/health',
                 protocol: Protocol.HTTP,
                 healthyThresholdCount: 5,
                 unhealthyThresholdCount: 2,
